@@ -1,4 +1,3 @@
-,
 /************************************************************************
  設定
  ************************************************************************/
@@ -24823,4 +24822,2688 @@ GSI.VectorTileLayer = L.TileLayer.Canvas.extend( {
 				y : (tilePoint.y+1) * tile._realTileSize - pixelBounds.min.y
 			};
 			
-			var newCurr
+			var newCurrent = $.extend( {}, tile._current );
+			
+			if (
+				tileLeftTop.x + tile._current.x > 0 
+				|| tile._current.y + tile._current.y > 0 
+				|| tileLeftTop.x + tile._current.x + tile._tileSize < mapSize.x
+				|| tileLeftTop.y + tile._current.y + tile._tileSize < mapSize.y )
+			{
+				
+				newCurrent.x = parseInt(-tileLeftTop.x + ( ( mapSize.x / 2 ) - ( tile._tileSize/2) ) );
+				newCurrent.y = parseInt(-tileLeftTop.y + ( ( mapSize.y / 2 ) - ( tile._tileSize/2) ) );
+			}
+			
+			if ( newCurrent.x < 0 )
+				newCurrent.x = 0;
+			if ( newCurrent.y < 0 )
+				newCurrent.y = 0;
+			if ( newCurrent.x > tile._realTileSize - tile._tileSize )
+				newCurrent.x = tile._realTileSize - tile._tileSize;
+			if ( newCurrent.y > tile._realTileSize - tile._tileSize )
+				newCurrent.y = tile._realTileSize - tile._tileSize;
+			
+			
+			
+			if ( newCurrent.x != tile._current.x || newCurrent.y != tile._current.y || !tile._updatePos)
+			{
+				
+				tile._current.x = newCurrent.x;
+				tile._current.y = newCurrent.y;
+				
+				var tilePos = this._getTilePos( tilePoint );
+				
+				tilePos.x += tile._current.x - tile._dX;
+				tilePos.y += tile._current.y - tile._dY;
+				
+				//var pos = $.extend( {}, L.DomUtil.getPosition(tile ) );
+				
+				L.DomUtil.setPosition(tile, tilePos, L.Browser.chrome);
+				
+				//var pos2 = $.extend( {}, L.DomUtil.getPosition(tile ) );
+				//console.log( tile._current  );
+				
+				//var ctx = tile.getContext('2d');
+				//ctx.clearRect( 0, 0, tile.width, tile.height );
+				//ctx.beginPath();
+				//this.drawTile(tile, tile._tilePoint, tile.geoJSON, zoom, true, tile._current );
+				return true;
+			}
+				
+		}
+		return false;
+		
+	},
+	
+	_onMapMoved : function(e)
+	{
+		if ( !this._useCanvas ) return;
+		var zoom = this._map.getZoom();
+		var dz = zoom - this.options.maxNativeZoom;
+		var pixelBounds = this._map.getPixelBounds();
+		var origin = this._map.getPixelOrigin();
+		var mapSize = this._map.getSize();
+				//console.log( this._map.getPixelBounds() );
+		if ( dz > this.options.maxDz)
+		{
+			for ( var key in this._tiles )
+			{
+				var tile = this._tiles[key];
+				if ( this._updateTilePosition( tile, zoom, dz, pixelBounds, origin, mapSize ) )
+				{
+					
+					var ctx = tile.getContext('2d');
+					ctx.clearRect( 0, 0, tile.width, tile.height );
+					ctx.beginPath();
+					this.drawTile(tile, tile._tilePoint, tile.geoJSON, zoom, true, tile._current );
+				}
+				
+				
+				
+			}
+		}
+		return true;
+	},
+	
+    drawTile: function (tile, tilePoint, drawLayers, zoom, redraw, drawOffset) {
+		
+		if ( !this._useCanvas || !drawLayers || !tile.getContext ) return;// !tile.geoJSON || !tile.getContext ) return;
+		
+		if ( !zoom ) zoom = this._map.getZoom();
+		var dz = zoom - this.options.maxNativeZoom;
+		var tileSize = ( this._printMode  ? this.options.canvasSize : this.options.tileSize );
+		var tz = zoom;
+		
+		//if(dz>=this.options.maxDz){tileSize = tileSize*Math.pow(2, this.options.maxDz);tz = tz -dz;}
+		//else 
+		if(dz>0){tileSize = tileSize*Math.pow(2, dz);tz = tz -dz;}
+		
+		var initialResolution = 2 * Math.PI / tileSize;
+		var resolution = initialResolution / (Math.pow(2, tz));
+		var originShift = 2 * Math.PI / 2.0;
+		
+		var ctx = tile.getContext('2d');
+		//var scale = 1;//( this._printMode  ? this.options.canvasSize / this.options.tileSize   : 1 );
+		
+		//var pos = this._getTilePos( tilePoint );
+		for( var i=0; i<drawLayers.length; i++ )
+		{
+			var drawList = [];
+			if ( drawLayers[i] instanceof L.FeatureGroup)
+			{
+				var layers = drawLayers[i].getLayers();
+				for( var j=0; j<layers.length; j++ )
+					drawList.push( layers[j] );
+			}
+			else
+			{
+				drawList.push( drawLayers[i] );
+			}
+			for( var j=0; j<drawList.length; j++ )
+			{
+				
+				drawList[j]._ctx = ctx;
+				drawList[j]._ctx.lineCap = 'round';
+				drawList[j]._ctx.lineJoin = 'round';
+				
+				drawList[j]._map = this._map;
+				//this._map._initPathRoot();
+				//drawList[j]._initPath();
+				
+				drawList[j].projectLatlngs(
+					tilePoint,this.options.canvasDx,this.options.canvasDy,tz,tileSize, resolution, originShift);
+				//drawList[j]._updateStyle();
+				
+				if ( !this._styleLoading )
+		        {
+			        var style = this.geojsonOptions.style;
+					if (typeof style === 'function') {
+						style = style(drawLayers[i].feature);
+					}
+					if (drawList[j].setStyle) {
+						
+						drawList[j].setStyle(style);
+					}
+					
+			        
+		        }
+				drawList[j]._updatePath(drawOffset);
+			}
+		}
+		
+	},
+	
+	setOpacity : function( opacity )
+	{
+		this._opacity = opacity;
+		if ( this.geojsonLayer )
+		{
+			var opacitySetter = new GSI.LayerOpacitySetter();
+			opacitySetter.setOpacity( this.geojsonLayer, opacity  );
+		}
+		
+		$( this._container ).css({ "opacity": opacity } );
+	}
+	
+} );
+
+
+
+
+
+GSI.VectorTileLayer._onGeoJSONMouseMove = function( e )
+{
+	if ( !GSI.VectorTileLayer._layers ) return;
+	var hitLayer = null;
+	for( var i=0; i<GSI.VectorTileLayer._layers.length; i++ )
+	{
+		var layer = GSI.VectorTileLayer._layers[i];
+		if ( !layer._useCanvas ) continue;
+		
+		hitLayer = layer._latLngToChildLayer( e.latlng );
+		
+		if ( hitLayer ) break;
+		
+	}
+	
+	if ( hitLayer )
+	{
+		layer._map._panes.overlayPane.style.cursor = 'pointer';
+	}
+	else
+	{
+		layer._map._panes.overlayPane.style.cursor = '';
+	}
+};
+	
+GSI.VectorTileLayer._onGeoJSONClick = function( e )
+{
+	if ( !GSI.VectorTileLayer._layers ) return;
+	var hitLayer = null;
+	for( var i=0; i<GSI.VectorTileLayer._layers.length; i++ )
+	{
+		var layer = GSI.VectorTileLayer._layers[i];
+		if ( !layer._useCanvas ) continue;
+		
+		var hitLayer = layer._latLngToChildLayer(  e.latlng );
+		
+		if ( hitLayer ) 
+		{
+			break;
+		}
+	}
+	
+	if ( hitLayer )
+	{
+		layer._popup = hitLayer._popup;
+		layer._popup.setLatLng(e.latlng);
+		layer._map.openPopup( layer._popup );
+	}
+};
+
+
+
+
+
+
+
+
+
+
+/*******************************************************
+
+ GSI.MapToImage
+    画像保存
+
+*******************************************************/
+
+
+GSI.MapToImage = {};
+
+GSI.MapToImage = L.Class.extend( {
+	includes: L.Mixin.Events,
+	options : {
+		drawControls : true
+	},
+	
+	initialize : function ( map, list, options )
+	{
+		L.setOptions(this, options);
+		this._map = map;
+		this._list = list;
+		
+	},
+	
+	setList : function( list )
+	{
+		this._list = list;
+	},
+	
+	start : function()
+	{
+		for ( var i=0; i<this._list.length; i++ )
+		{
+			
+			var item = this._list[i];
+			var layer = item.layer;
+			if ( !layer ) {
+				item.loaded = true;
+				continue;
+			}
+			
+			
+			if ( item.type == "geojson" )
+			{
+				item.drawLayer = new GSI.MapToImage.VectorTileLayer( this._map, layer, {opacity: item.opacity} );
+			}
+			if ( item.type == "kml" )
+			{
+				item.drawLayer = new GSI.MapToImage.VectorTileLayer( this._map, layer, {opacity: item.opacity} );
+			}
+			
+			else if ( item.type == "geojson_tile" )
+			{
+				item.drawLayer = new GSI.MapToImage.VectorTileLayer( this._map, layer, {opacity: item.opacity} );
+			}
+			else if ( item.type == "tile" )
+			{
+                
+				item.drawLayer = new GSI.MapToImage.TileLayer( this._map, layer, {
+					opacity: item.opacity, 
+					grayscale: item.grayscale,
+					blend: item.blend
+					} );
+			}
+			else if ( item.type == "system" )
+			{
+				item.drawLayer = layer;
+			}
+			else
+			{
+				item.loaded = true;
+			}
+			if ( !item.drawLayer ) continue;
+			item.loaded = false;
+			
+		}
+		
+		for ( var i=0; i<this._list.length; i++ )
+		{
+			
+			var item = this._list[i];
+			
+			if ( !item.drawLayer ) continue;
+			
+			if ( item.drawLayer.on )
+			{
+				item.drawLayer.off("loaded").on("loaded", L.bind(this._onLoad, this, item ) );
+			}
+			
+			if ( item.drawLayer.refreshQueue ) 
+			{
+				item.drawLayer.refreshQueue();
+			}
+			
+			if ( item.drawLayer.load )
+			{
+				item.drawLayer.load();
+			}
+			else
+				item.loaded = true;
+		
+		}
+		
+		if ( !this._drawn )this._onLoad({});
+	},
+	
+	_onLoad : function(item) {
+		
+		item.loaded  = true;
+		var loaded = true;
+		for( var i =0; i<this._list.length; i++ )
+		{
+			if ( !this._list[i].loaded ){ loaded = false; break; }
+		}
+		if ( loaded ) {
+			this._drawn = true;
+			this._drawMapImage();
+		}
+	},
+	
+	_drawMapImage : function()
+	{
+		var size = this._map.getSize();
+		
+		var imageSize = {
+			width : size.x,
+			height : size.y
+		};
+		
+		this._mapCanvas = $( "<canvas>" ).css ( {
+		} )
+		.attr( {
+			"width" : size.x,
+			"height" : size.y
+		} );
+		this._mapTexture = this._mapCanvas[0].getContext("2d");
+		this._mapTexture.fillStyle = "rgb(255, 255, 255)";
+		this._mapTexture.fillRect(0, 0, size.x, size.y);
+		for ( var i=this._list.length-1; i>=0; i-- )
+		{
+			if ( this._list[i].drawLayer )
+			{
+				if ( this._list[i].type=="system" )
+					this._list[i].drawLayer.drawPath( this._mapTexture );
+				else
+				{
+				    this._list[i].drawLayer.draw( this._mapTexture );
+			    }
+			}
+		}
+		this._markerPaneToCanvas();
+		
+		
+	},
+	
+	_drawDIVMarker : function(marker, origin, pixelBounds)
+	{
+		var result = false;
+		
+		var div = marker.children("div");
+		
+	
+		var radius = div.css( "border-radius" ) || div.css( "-moz-border-radius" ) || div.css( "-webkit-border-radius" );
+		if ( radius )
+		{
+			radius = $.trim(radius);
+			var parts = radius.split( " " );
+			if (parts.length > 0 )
+				radius = parseInt( parts[0] );
+			else
+				radius = 0;
+		}
+		else
+			radius = 0;
+		
+		var left = 0;
+		var top = 0;
+		//transform: translate3d(1023px, -112px, 0px); opacity: 1;
+		if (L.Browser.any3d) {
+			var matches = marker[0].style[L.DomUtil.TRANSFORM].match(/([+-]*\d+)[\D]*\,[^+-\d]*([+-]*\d+)[\D]*/);
+			if (matches) {
+				left = parseFloat(matches[1])+( origin.x-pixelBounds.min.x );
+				top  = parseFloat(matches[2])+( origin.y-pixelBounds.min.y );
+			}
+		} else {
+			left = parseInt(marker[0].style.left)+( origin.x-pixelBounds.min.x );
+			top = parseInt(marker[0].style.top)+( origin.y-pixelBounds.min.y );
+		}
+		
+		var margin = {
+			left : 0,
+			top : 0
+		};
+		
+		
+		var opacity = div.css("opacity");
+		if (!opacity ) opacity = 1;
+		
+		
+			
+		if ( marker.css("margin-left") ) margin.left = parseFloat( marker.css("margin-left") );
+		if ( marker.css("margin-top") ) margin.top = parseFloat( marker.css("margin-top") );
+		if ( marker.css("margin") ) {
+			var parts = $.trim(marker.css("margin")).split( " " );
+			if ( parts.length > 0 ) margin.top = parseFloat( $.trim(parts[0]) );
+			if ( parts.length > 3 ) margin.left= parseFloat( $.trim(parts[3]) );
+			
+		}
+		if ( $.trim( div.html() ) == "" )
+		{
+			
+			
+			var bgColor = "#000";
+			if ( div.css( "background-color" ) ) bgColor = div.css( "background-color" );
+			else if ( div.css( "background" ) ) bgColor = div.css( "background" );
+			var size = {
+				w : div.outerWidth(),
+				h : div.outerHeight()
+			};
+			
+			
+			if ( radius )
+			{
+				
+				this._mapTexture.beginPath();
+				this._mapTexture.arc(left, top, size.w/2, 0, Math.PI*2, false);
+				this._mapTexture.save();
+				this._mapTexture.fillStyle = bgColor;
+				this._mapTexture.globalAlpha=opacity;
+				this._mapTexture.fill();
+				this._mapTexture.restore();
+			}
+			else
+			{
+				this._mapTexture.fillStyle = bgColor;
+				this._mapTexture.globalAlpha=opacity;
+				this._mapTexture.fillRect(left+margin.left, top+margin.top, size.w, size.h);
+			}
+			result = true;
+		}
+		else
+		{
+			var cssText = ( div.prop("style") ? div.prop("style").cssText : "" );
+			
+			var fontSize = div.css("font-size") || '12px';
+			var fontWeight = div.css("font-weight") || '';
+			var fontStyle = div.css("font-style") || '';
+			var textShadow = div.css("text-shadow") || div.css("-ms-text-shadow") || '';
+			if ( textShadow )
+			{
+				var matches = textShadow.match(/(rgb\([\d\s,]+\))/);
+				if ( matches )textShadow = matches[1];
+				else {
+					matches = textShadow.match(/(#[a-f|A-F|\d]+)/);
+					if ( matches )textShadow = matches[1];
+					else textShadow = '';
+				};
+			}
+			else textShadow = '';
+			var color = div.css("color") || "#000";
+			var fontFamily = div.css("font-family");
+			if ( !fontFamily || fontFamily == '' ) fontFamily = "'Meiryo','メイリオ','ヒラギノ角ゴ Pro W3','sans-serif'";
+			var text = div.text();
+			var transformOrign = div.css("transform-origin");
+			var lineHeight = div.css("line-height");
+			var transform = div.css("transform") 
+				|| div.css("-moz-transform") || div.css("-o-transform") 
+				|| div.css("-ms-transform")|| div.css("-webkit-transform");
+			var rotate = 0;
+			if ( transform )
+			{
+				var matches = transform.match(/rotate\((.+?)deg/);
+				if ( matches )rotate = parseFloat(matches[1]);
+				else
+				{
+					var matches = cssText.match(/rotate\((.+?)deg/);
+					if ( matches )rotate = parseFloat(matches[1]);
+				}
+			}
+			
+			var angle90 = div.css("writing-mode") 
+				|| div.css("-moz-writing-mode") || div.css("-o-writing-mode") 
+				|| div.css("-ms-writing-mode")|| div.css("-webkit-writing-mode");
+			if ( angle90 ) angle90 = $.trim( angle90 );
+			else
+			{
+				var matches = cssText.match(/vertical-rl/);
+				if ( matches )angle90 = "vertical-rl";
+			}
+			
+			
+			//if ( !transform 
+			var textAlign = "left";
+			var textBaseline = "top";
+			
+			if ( transformOrign && transformOrign != "" )
+			{
+				transformOrign = $.trim(transformOrign);
+				var parts = transformOrign.split( " " );
+				if ( parts.length == 1 )
+				{
+					if ( parts[0] == "right" || parts[0] == "bottom" )
+					{
+						textAlign = "right";
+						textBaseline = "bottom";
+					}
+					else if ( parts[0] == "center" )
+					{
+						
+						textAlign = "center";
+						textBaseline = "middle";
+					}
+					else
+					{
+						textAlign = "left";
+						textBaseline = "top";
+					}
+					
+				}
+				else if ( parts.length >= 2 )
+				{
+					if ( parts[0] == "right" || parts[0] == "bottom" )
+						textAlign = "right";
+					else if ( parts[0] == "center" )
+						textAlign = "center";
+					else
+						textAlign = "left";
+					
+					
+					if ( parts[1] == "right" || parts[1] == "bottom" )
+						textBaseline = "bottom";
+					else if ( parts[1] == "center" )
+						textBaseline = "middle";
+					else
+						textBaseline = "top";
+						
+				}
+				
+			}
+			
+			if ( lineHeight && lineHeight.match(/px/) )
+			{
+				lineHeight = parseFloat( lineHeight );
+			}
+			else
+				lineHeight = null;
+			
+			var parts = fontFamily.split( ',' );
+			fontFamily = "";
+			for( var k=0; k<parts.length; k++ )
+			{
+				fontFamily += (fontFamily == "" ? "": ",") + "'" + $.trim(parts[k]).replace(/[\'\"]/g,"") + "'";
+			}
+			
+			this._mapTexture.font = ( fontStyle != "" ? fontStyle + " " : "" ) + fontWeight + " " + fontSize + " " + fontFamily + "";
+			this._mapTexture.globalAlpha=opacity;
+			
+			
+			if ( angle90 == "mode:tb-rl" || angle90 == "vertical-rl" )
+			{
+				return this._drawDIVMarkerTategaki(left, top, margin, text, color, textShadow, textAlign, textBaseline, rotate, lineHeight );
+			}
+			
+			this._mapTexture.textAlign = textAlign;
+			this._mapTexture.textBaseline = textBaseline;
+				
+			
+			var metrics  = this._mapTexture.measureText(text, left+margin.left, top+margin.top );
+			var lineWidth = metrics.width;
+			
+			if ( lineHeight != null )
+			{
+				this._mapTexture.textAlign = "top";
+				top += (lineHeight/2);
+			}
+		
+			if ( rotate != 0 )
+			{
+				//top += lineHeight;
+				this._mapTexture.save();
+				this._mapTexture.translate( left+margin.left, top+margin.top );
+				this._mapTexture.rotate( rotate * Math.PI / 180 );
+				if ( textShadow && textShadow != '' )
+				{
+					this._mapTexture.lineWidth  = 4;
+					this._mapTexture.strokeStyle = textShadow;
+					this._mapTexture.strokeText(text, 0,0 );
+				}
+				
+				this._mapTexture.fillStyle = color;
+				this._mapTexture.fillText(text, 0,0 );
+				this._mapTexture.restore();
+			}
+			else
+			{
+				
+				this._mapTexture.save();
+				this._mapTexture.rotate( 0 );
+				this._mapTexture.translate( left+margin.left,top+margin.top);
+				if ( textShadow && textShadow != '' )
+				{
+					this._mapTexture.lineWidth  = 4;
+					this._mapTexture.strokeStyle = textShadow;
+					this._mapTexture.strokeText(text, 0, 0 );
+				}
+				this._mapTexture.fillStyle = color;
+				this._mapTexture.fillText(text, 0, 0 );
+				this._mapTexture.restore();
+			}
+			result = true;
+			
+		}
+		return result;
+	},
+	
+	_drawDIVMarkerTategaki : function(left, top, margin, text, color, textShadow, textAlign, textBaseline, rotate, lineHeight)
+	{
+		var texture = this._mapTexture;
+		var canvas = null;
+		
+		if ( rotate != 0 )
+		{
+			canvas = document.createElement( "canvas" );
+			texture = canvas.getContext('2d');
+			texture.font = this._mapTexture.font;
+			texture.globalAlpha = this._mapTexture.globalAlpha;
+		}
+		
+		var isDrawShadow = !!( textShadow && textShadow != '');
+		if ( isDrawShadow )
+		{
+			texture.lineWidth  = 4;
+			texture.strokeStyle = textShadow;
+		}
+		var result = false;
+		var metric = texture.measureText("あ" );
+		var charHeight = metric.width;
+		
+		texture.textAlign = "center";
+		//texture.textAlign = "left";
+		texture.textBaseline = "top";
+		
+		
+		//texturefillText(text, left+margin.left, top+margin.top);
+		texture.fillStyle = color;
+		var x = ( !canvas ? left+margin.left : 0 ) + (charHeight/2);
+		var y= ( !canvas ? top+margin.top : 0 );
+		for( var i=0; i<text.length; i++ )
+		{
+			var c = text.charAt(i);
+			
+			if ( c == "（" || c == "(" )
+			
+			{
+				c="(";
+				texture.save();
+				texture.textBaseline = "middle";
+				//texture.textBaseline = "middle";
+				texture.translate( 
+					x,
+					y + charHeight - texture.measureText(c).width / 2); //texture.measureText(c).width, y + );
+				texture.rotate( 90 * Math.PI / 180 );
+				
+				if ( isDrawShadow )
+					texture.strokeText(c, 0,0 );
+				texture.fillText(c, 0, 0);
+				texture.restore();
+			}
+			else if ( c == "）" || c == ")" )
+			{
+				c= ")";
+				texture.save();
+				texture.textBaseline = "middle";
+				texture.translate( x,
+					y + charHeight / 2);
+				texture.rotate( 90 * Math.PI / 180 );
+				if ( isDrawShadow )
+					texture.strokeText(c, 0,0);
+				texture.fillText(c, 0, 0 );
+				texture.restore();
+			}
+			else
+			{
+				
+				texture.save();
+				if ( isDrawShadow )
+					texture.strokeText(c,x,y);
+				texture.fillText(c, x, y);
+				
+				texture.restore();
+			}
+			y += charHeight;
+			
+		}
+		
+		if ( canvas )
+		{
+			//texture
+			this._mapTexture.save();
+			this._mapTexture.translate( left+margin.left, top+margin.top );
+			this._mapTexture.rotate( rotate * Math.PI / 180 );
+			this._mapTexture.drawImage(canvas, 0,0);
+			this._mapTexture.restore();
+		}
+		
+		
+		result = true;
+		return result;
+	},
+	
+	_markerPaneToCanvas : function()
+	{
+		var size = this._map.getSize();
+		var markerPane = $(".leaflet-objects-pane .leaflet-marker-pane" ).clone();
+		var images = markerPane.find( "img" );
+		images.each(function() {
+			this.crossOrigin = "anonymous";
+			var url = this.src.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp");
+			if(url.indexOf('//maps.gsi.go.jp/') != -1)
+			{
+				url=url.replace('https://','//');
+				url=url.replace('http://','//');
+			}
+			if ( !CONFIG.ISPREVIEWSITE )
+			{
+				this.src = url;
+			}
+			else
+			{
+				if ( url.match(/maps.gsi.go.jp/) )
+				{
+					var proxy = CONFIG.PROXYURL;
+					this.src = proxy.replace( "{url}",  url.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp") );
+				}
+			}
+			
+		} );
+		
+		
+		
+		var origin = this._map.getPixelOrigin();
+		var pixelBounds = this._map.getPixelBounds();
+		
+		//markerPane.find( "*" ).css( {"transform":"none"} );
+		
+		//markerPane.css( { "position":"absolute", "margin-left" : ( origin.x - pixelBounds.min.x ) + "px",  "margin-top" : ( origin.y - pixelBounds.min.y) + "px"} );
+		
+		var markers = markerPane.children();
+		for( var i=0; i<markers.length; i++ )
+		{
+			var marker = $(markers[i]);
+			
+			if ( marker.prop("tagName") == "DIV" && marker.find("img").length <= 0)
+			{
+				if ( this._drawDIVMarker( marker, origin,pixelBounds ) )
+					marker.remove();
+			}
+			
+		}
+		
+		
+		
+		if ( origin.x-pixelBounds.min.x == 0 && top+( origin.y-pixelBounds.min.y ) == 0 )
+		{
+			
+		}
+		else
+		{
+			var elems = markerPane.find( "*" );
+			
+			for( var i=0; i<elems.length; i++ )
+			{
+				var el = elems[i];
+				var transform = el.style[L.DomUtil.TRANSFORM];
+				var left = 0;
+				var top = 0;
+				//transform: translate3d(1023px, -112px, 0px); opacity: 1;
+				if (L.Browser.any3d) {
+					
+					var matches = el.style[L.DomUtil.TRANSFORM].match(/([+-]*\d+)[\D]*\,[^+-\d]*([+-]*\d+)[\D]*/);
+					if (matches) {
+						//console.log( matches );
+						left = parseFloat(matches[1]);
+						top  = parseFloat(matches[2]);
+						
+						var point = new L.Point(left+( origin.x-pixelBounds.min.x ), top+( origin.y-pixelBounds.min.y ) );
+						el.style[L.DomUtil.TRANSFORM] =  L.DomUtil.getTranslateString(point);
+					}
+				} else {
+					el.style.left = parseInt(el.style.left)+( origin.x-pixelBounds.min.x ) + "px";
+					el.style.top = parseInt(el.style.top)+( origin.y-pixelBounds.min.y ) + "px";
+					//left = parseFloat(el.style.left);
+					//top  = parseFloat(el.style.top);
+				}
+				
+			}
+		}
+		
+		
+		
+		
+		
+		
+		
+		var dummy = $( "<div>" ).addClass("maptoimage-dummy").css({"z-index" : 0, "width": "1px", "height": "1px", "position": "absolute"});
+		$( "body" ).append(dummy);
+		
+		dummy.append( markerPane );
+		html2canvas(markerPane[0], {
+			onrendered: L.bind( this._onMarkerRendered, this ),
+			logging:false,
+			userCORS:true,
+			allowTaint:false,
+			width: size.x,
+			height: size.y
+		});
+		
+	},
+	_popupPaneToCanvas : function()
+	{
+		var size = this._map.getSize();
+		var popupPane = $(".leaflet-objects-pane .leaflet-popup-pane" ).clone();
+		
+		if ( popupPane.children().length <= 0 )
+		{
+			this._balloonToCanvas();
+			return;
+		}
+		
+		var images = popupPane.find( "img" );
+		images.each(function() {
+			this.crossOrigin = "anonymous";
+			var url = this.src.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp");
+			if(url.indexOf('//maps.gsi.go.jp/') != -1)
+			{
+				url=url.replace('https://','//');
+				url=url.replace('http://','//');
+			}
+			if ( !CONFIG.ISPREVIEWSITE )
+			{
+				this.src = url;
+			}
+			else
+			{
+				if ( url.match(/maps.gsi.go.jp/) )
+				{
+					var proxy = CONFIG.PROXYURL;
+					this.src = proxy.replace( "{url}",  url.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp") );
+				}
+			}
+			
+		} );
+		
+		
+		
+		
+		var mapPane = $( ".leaflet-map-pane" );
+		popupPane.find( ".leaflet-popup" ).remove();
+		
+		
+		var origin = this._map.getPixelOrigin();
+		var pixelBounds = this._map.getPixelBounds();
+		
+		//markerPane.find( "*" ).css( {"transform":"none"} );
+		
+		//markerPane.css( { "position":"absolute", "margin-left" : ( origin.x - pixelBounds.min.x ) + "px",  "margin-top" : ( origin.y - pixelBounds.min.y) + "px"} );
+		
+		if ( origin.x-pixelBounds.min.x == 0 && top+( origin.y-pixelBounds.min.y ) == 0 )
+		{
+			
+		}
+		else
+		{
+			var elems = popupPane.find( "*" );
+			
+			for( var i=0; i<elems.length; i++ )
+			{
+				var el = elems[i];
+				var transform = el.style[L.DomUtil.TRANSFORM];
+				var left = 0;
+				var top = 0;
+				//transform: translate3d(1023px, -112px, 0px); opacity: 1;
+				if (L.Browser.any3d) {
+					
+					var matches = el.style[L.DomUtil.TRANSFORM].match(/([+-]*[\d\.]+)[\D]*\,[^+-\d]*([+-]*[\d\.]+)[\D]*/);
+					if (matches) {
+						left = parseFloat(matches[1]);
+						top  = parseFloat(matches[2]);
+						
+						var point = new L.Point(left+( origin.x-pixelBounds.min.x ), top+( origin.y-pixelBounds.min.y ) );
+						el.style[L.DomUtil.TRANSFORM] =  L.DomUtil.getTranslateString(point);
+					}
+				} else {
+					left = parseFloat(el.style.left);
+					top  = parseFloat(el.style.top);
+				}
+				
+			}
+		}
+		
+		var dummy = $( "<div>" ).addClass("maptoimage-dummy").css({"z-index" : 0, "width": "1px", "height": "1px", "position": "absolute"});
+		$( "body" ).append(dummy);
+		
+		//mapPane.append( popupPane );
+		dummy.append( popupPane );
+		html2canvas(popupPane[0], {
+			onrendered: L.bind( this._onPopupRendered, this ),
+			logging:false,
+			userCORS:true,
+			allowTaint:false,
+			width: size.x,
+			height: size.y
+		});
+	},
+	
+	_onMarkerRendered : function(canvas) 
+	{
+		var size = this._map.getSize();
+		
+		this._mapTexture.drawImage(canvas, 0, 0, size.x, size.y, 
+				0,0, 
+				size.x, size.y);
+		$( ".maptoimage-dummy" ).remove();
+		
+		if ( this.options.drawControls )
+			this._centerCrossToCanvas();
+		this._popupPaneToCanvas();
+		
+	},
+	
+	_onPopupRendered : function(canvas) 
+	{
+		var size = this._map.getSize();
+		
+		this._mapTexture.drawImage(canvas, 0, 0, size.x, size.y, 
+				0,0, 
+				size.x, size.y);
+		$( ".maptoimage-dummy" ).remove();
+		this._balloonToCanvas();
+		
+	},
+	
+	_balloonToCanvas : function()
+	{
+		var size = this._map.getSize();
+		
+		
+		var popupPane = $(".leaflet-objects-pane .leaflet-popup-pane" ).clone();
+		//popupPane.children( ":not(.leaflet-popup)" ).remove();
+		var baloons = popupPane.find( ".leaflet-popup" );
+		var baloonsOrig = $( ".leaflet-objects-pane .leaflet-popup-pane .leaflet-popup" );
+		
+		if ( baloons.length <= 0 ) 
+		{
+			if ( this.options.drawControls )
+				this._miniMapToCanvas();
+			else
+				this._scaleToCanvas();
+			return;
+		}
+		
+		var images = popupPane.find( "img" );
+		images.each(function() {
+			this.crossOrigin = "anonymous";
+			var src = this.src.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp");
+			if(src.indexOf('//maps.gsi.go.jp/') != -1)
+			{
+				src=src.replace('https://','//');
+				src=src.replace('http://','//');
+			}
+			if ( !CONFIG.ISPREVIEWSITE )
+			{
+				this.src = src;
+			}
+			else
+			{
+				if ( src.match(/maps.gsi.go.jp/) )
+				{
+					var proxy = CONFIG.PROXYURL;
+					this.src = proxy.replace( "{url}",  src.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp") );
+				}
+			}
+			
+		} );
+		
+		
+		
+		
+		this._baloons = [];
+		var containerPos = $(this._map.getContainer() ).offset();
+		for( var i=0; i<baloons.length; i++ )
+		{
+			var pos = $(baloonsOrig[i]).offset();
+			pos.top-=containerPos.top;
+			pos.left-=containerPos.left;
+			
+			this._baloons.push(
+				{
+					elem: baloons[i],
+					pos : pos,
+					arrowHeight : $(baloonsOrig[i]).find(".leaflet-popup-tip-container .leaflet-popup-tip").outerHeight()
+				} );
+		}
+		
+		this._drawNextBalloon();
+		
+		
+		
+	},
+	
+	_drawNextBalloon : function()
+	{
+		var baloon = $( this._baloons[0].elem );
+		
+		var closeBtn = baloon.find("a.leaflet-popup-close-button").css( {
+		    position: "absolute",
+			top: 0,
+			right: 0,
+			padding: "4px 4px 0 0",
+			"text-align": "center",
+			width: "18px",
+			height: "14px",
+			font: "16px/14px Tahoma, Verdana, sans-serif",
+			color: "#c3c3c3",
+			"text-decoration": "none",
+			"font-weight": "bold",
+			background: "transparent"
+		} ).remove();
+		
+		baloon.find(".leaflet-popup-tip-container").remove();
+		baloon.append( closeBtn );
+		var origin = this._map.getPixelOrigin();
+		var pixelBounds = this._map.getPixelBounds();
+		
+		var dummy = $( "<div>" ).addClass("maptoimage-dummy").css({"z-index" : 0, "width": "1px", "height": "1px", "position": "absolute"});
+		$( "body" ).append(dummy);
+		
+		dummy.append( baloon[0] );
+		
+		
+		var iframes = dummy.find("iframe");
+	
+	
+		for( var i=0; i<iframes.length; i++ )
+		{
+			var w = $(iframes[i] ).outerWidth() ;
+			var h = $(iframes[i] ).outerHeight() ;
+			
+			$(iframes[i] ).parent().append( $( "<div>" ).css({ width:w +"px", height:h+"px", background:"#333"}) );
+			$(iframes[i] ).hide();
+			
+			
+		}
+		
+		
+		
+		this._baloons[0].width = baloon.outerWidth();
+		this._baloons[0].height = baloon.outerHeight();
+		
+		
+		baloon.css( {
+			"transform" : "none",
+			"left" : 0,
+			"top" : 0
+		} );
+		
+		html2canvas(baloon[0], {
+			onrendered: L.bind( this._onBalloonRendered, this ),
+			logging:false,
+			userCORS:true,
+			allowTaint:true,
+			width: this._baloons[0].width,
+			height: this._baloons[0].height
+		});
+	},
+	
+	_onBalloonRendered : function(canvas) 
+	{
+		
+		this._mapTexture.shadowBlur = 20;
+		this._mapTexture.shadowColor = "rgba(0, 0, 0, 0.5)";
+		
+		
+		this._mapTexture.drawImage(canvas, 
+				0,0, 
+				this._baloons[0].width, this._baloons[0].height, 
+				this._baloons[0].pos.left, this._baloons[0].pos.top, 
+				this._baloons[0].width, this._baloons[0].height);
+		
+		
+		
+		this._mapTexture.shadowBlur = 0;
+		this._mapTexture.shadowColor = "rgba(0, 0, 0, 0)";
+		
+		var pos = {
+			x : 0,
+			y : 0
+		};
+		
+		pos.x = this._baloons[0].pos.left + ( this._baloons[0].width / 2 );
+		pos.y = this._baloons[0].pos.top + this._baloons[0].height;
+		
+		this._mapTexture.beginPath();
+		this._mapTexture.moveTo(
+			parseInt(pos.x - 14 ), 
+			parseInt(pos.y - 1 )
+		);
+		
+		this._mapTexture.lineTo(
+			parseInt(pos.x + 14 ), 
+			parseInt(pos.y - 1 )
+		);
+		
+		this._mapTexture.lineTo(
+			parseInt(pos.x ), 
+			parseInt(pos.y - 1 + 14 )
+		);
+		
+		this._mapTexture.closePath();
+		this._mapTexture.save();
+		this._mapTexture.fillStyle = "#fff";
+		this._mapTexture.globalAlpha = 1;
+		this._mapTexture.fill();   
+		this._mapTexture.restore();
+			
+		$( ".maptoimage-dummy" ).remove();
+		this._baloons.shift();
+		
+		if ( this._baloons.length <= 0 )
+		{
+			if ( this.options.drawControls )
+				this._miniMapToCanvas();
+			else
+				this._scaleToCanvas();
+			
+		}
+		else
+			this._drawNextBalloon();
+		
+	},
+	
+	_miniMapToCanvas : function()
+	{
+		var size = this._map.getSize();
+		
+		if ( GSI.GLOBALS.onoffObjects[CONFIG.PARAMETERNAMES.MINIMAP] .obj.getVisible() )
+		{
+			var miniMap = GSI.GLOBALS.onoffObjects[CONFIG.PARAMETERNAMES.MINIMAP] .obj.miniMap;
+			var tileLayer = new GSI.MapToImage.TileLayer(miniMap._miniMap, miniMap._layer);
+			tileLayer.on("loaded", L.bind(this._onMiniMapLoad, this, { tileLayer: tileLayer, miniMap : miniMap} ) );
+			tileLayer.refreshQueue();
+			tileLayer.load();
+			
+		}
+		else
+			this._scaleToCanvas();
+		
+	},
+	
+	_onMiniMapLoad : function( data )
+	{
+		var size = data.miniMap._miniMap .getSize();
+		var imageSize = {
+			width : size.x,
+			height : size.y
+		};
+		
+		var canvas = $( "<canvas>" ).css ( {
+		} )
+		.attr( {
+			"width" : size.x,
+			"height" : size.y
+		} );
+		texture = canvas[0].getContext("2d");
+		texture.fillStyle = "rgb(255, 255, 255)";
+		texture.fillRect(0, 0, size.x, size.y);
+		
+		data.tileLayer.draw(texture);
+		var miniMapContainer = $(".leaflet-control-container .leaflet-control-minimap" ).clone();
+		miniMapContainer.empty();
+		
+		var dummy = $( "<div>" ).addClass("maptoimage-dummy").css({"z-index" : 0, "width": "1px", "height": "1px", "position": "absolute"});
+		$( "body" ).append(dummy);
+		
+		dummy.append( miniMapContainer );
+		var canvas2 = canvas[0];
+		html2canvas(miniMapContainer[0], {
+			onrendered: L.bind( function(canvas){
+				var offset = $(this._map.getContainer() ).offset();
+				var pos = $(".leaflet-control-container .leaflet-control-minimap" ).offset();
+				pos.left -= offset.left;
+				pos.top -= offset.top;
+				
+				
+				if ( $( "#footer" ).is(":visible") )
+					pos.top += $( "#footer" ).outerHeight();
+				//this._mapTexture.drawImage(canvas, pos.left, pos.top );
+				//this._mapTexture.drawImage(canvas2, pos.left+2, pos.top+2 );
+				
+				var min = null;
+				var max = null;
+				
+				for( var i=0; i<data.miniMap._aimingRect._parts[0].length; i++ )
+				{
+					if ( !min ) min = $.extend( {}, data.miniMap._aimingRect._parts[0][i] );
+					else
+					{
+						if( min.x > data.miniMap._aimingRect._parts[0][i].x ) min.x = data.miniMap._aimingRect._parts[0][i].x;
+						if( min.y > data.miniMap._aimingRect._parts[0][i].y ) min.y = data.miniMap._aimingRect._parts[0][i].y;
+					}
+					if ( !max ) max = $.extend( {}, data.miniMap._aimingRect._parts[0][i] );
+					else
+					{
+						if( max.x < data.miniMap._aimingRect._parts[0][i].x ) max.x = data.miniMap._aimingRect._parts[0][i].x;
+						if( max.y < data.miniMap._aimingRect._parts[0][i].y ) max.y = data.miniMap._aimingRect._parts[0][i].y;
+					}
+				}
+				
+				var w = max.x - min.x;
+				var h = max.y - min.y;
+				var texture = canvas2.getContext("2d");
+				texture.moveTo( parseInt(size.x / 2 - w / 2), parseInt(size.y / 2 - h / 2) );
+				texture.lineTo( parseInt(size.x / 2 + w / 2), parseInt(size.y / 2 - h / 2) );
+				texture.lineTo( parseInt(size.x / 2 + w / 2), parseInt(size.y / 2 + h / 2) );
+				texture.lineTo( parseInt(size.x / 2 - w / 2), parseInt(size.y / 2 + h / 2) );
+				texture.closePath();
+				texture.save();
+				texture.lineWidth = 2;
+				texture.strokeStyle = data.miniMap._aimingRect.options.color;
+				texture.fillStyle = data.miniMap._aimingRect.options.color;
+				
+				texture.globalAlpha = data.miniMap._aimingRect.options.fillOpacity;
+				texture.fill();   
+				texture.globalAlpha = data.miniMap._aimingRect.options.opacity;
+				texture.stroke();
+				texture.restore();
+				
+				//var drawLayer = new GSI.MapToImage.VectorTileLayer( data.miniMap._miniMap , data.miniMap._aimingRect );
+				//drawLayer.draw( canvas.getContext("2d") );
+				
+				this._mapTexture.shadowBlur = 10;
+				this._mapTexture.shadowColor = "rgba(0, 0, 0, 0.5)";
+
+				this._mapTexture.drawImage(canvas, pos.left, pos.top );
+				this._mapTexture.drawImage(canvas2, pos.left+2, pos.top+2 );
+				
+				
+				$( ".maptoimage-dummy" ).remove();
+				this._scaleToCanvas();
+			}, this ),
+			logging:false,
+			userCORS:true,
+			allowTaint:false,
+			width: size.x+4,
+			height: size.y+4
+		});
+		
+	},
+	
+	_scaleToCanvas : function(canvas) 
+	{
+		var size = this._map.getSize();
+		
+		var scaleBar = $( ".leaflet-control-scale" );
+		
+		var size = {
+			w : scaleBar.outerWidth(),
+			h : scaleBar.outerHeight()
+		};
+		
+		var offset = $(this._map.getContainer() ).offset();
+		var pos = scaleBar.offset();
+		if ( $( "#footer" ).is(":visible") )
+			pos.top += $( "#footer" ).outerHeight();
+		pos.left -= offset.left;
+		pos.top -= offset.top;
+		pos.left +=1;
+		pos.top +=1;
+		size.w -= 2;
+		size.h -= 2;
+		
+		
+		this._mapTexture.fillStyle = "#fff";
+		this._mapTexture.globalAlpha = 0.5;
+		this._mapTexture.fillRect( pos.left, pos.top, size.w, size.h );
+		if ( this._mapTexture.setLineDash !== undefined )
+			this._mapTexture.setLineDash([]);
+		else if ( this._ctx.mozDash !== undefined )
+			this._mapTexture.mozDash = [];
+		
+		this._mapTexture.beginPath();
+		this._mapTexture.moveTo( pos.left, pos.top );
+		this._mapTexture.lineTo( pos.left, pos.top  + size.h );
+		this._mapTexture.lineTo( pos.left + size.w, pos.top  + size.h );
+		this._mapTexture.lineTo( pos.left + size.w, pos.top );
+		this._mapTexture.save();
+		this._mapTexture.globalAlpha = 1;
+		this._mapTexture.lineWidth = 2;
+		this._mapTexture.strokeStyle = "#777";
+		this._mapTexture.stroke();
+		
+		
+		this._mapTexture.font = "normal 11px 'Lucida Grande','Hiragino Kaku Gothic ProN', 'ヒラギノ角ゴ ProN W3', 'Meiryo', 'メイリオ', 'sans-serif'";
+		
+		this._mapTexture.fillStyle = "#333";
+		this._mapTexture.textAlign = "left";
+		this._mapTexture.textBaseline = "middle";
+		this._mapTexture.fillText( scaleBar.text(), 
+			pos.left + 6, pos.top + size.h / 2 );
+		
+		this._mapTexture.restore();
+		
+		this._finish();
+		/*
+		scaleBar = scaleBar.clone();
+		var dummy = $( "<div>" ).addClass("maptoimage-dummy").css({"z-index" : 0, "width": "1px", "height": "1px", "position": "absolute"});
+		$( "body" ).append(dummy);
+		
+		console.log( scaleBar );
+		//mapPane.append( popupPane );
+		dummy.append( scaleBar );
+		html2canvas(scaleBar[0], {
+			onrendered: L.bind( function(canvas) {
+				
+				$( ".maptoimage-dummy" ).remove();
+				var scaleBar = $( ".leaflet-control-scale" );
+				var offset = $(this._map.getContainer() ).offset();
+				var pos = scaleBar.offset();
+				if ( $( "#footer" ).is(":visible") )
+					pos.top += $( "#footer" ).outerHeight();
+				//if ( pos.left - 280 > 0 ) pos.left-=280;
+				this._mapTexture.drawImage(canvas, pos.left - offset.left, pos.top - offset.top );
+				this._finish();
+			}, this ),
+			logging:false,
+			userCORS:true,
+			allowTaint:false,
+			width: size.x,
+			height: size.y
+		});
+		*/
+		
+	},
+	
+	_centerCrossToCanvas : function()
+	{
+		var size = this._map.getSize();
+		
+		if ( GSI.GLOBALS.onoffObjects[CONFIG.PARAMETERNAMES.CENTERCROSS] .obj.getVisible() )
+		{
+			this._mapTexture.beginPath();
+			
+			this._mapTexture.moveTo( parseInt(size.x / 2 ) - 16, parseInt( size.y / 2 ) );
+			this._mapTexture.lineTo( parseInt(size.x / 2 ) + 16, parseInt( size.y / 2 ) );
+			
+			
+			this._mapTexture.moveTo( parseInt(size.x / 2 ), parseInt( size.y / 2 ) - 16 );
+			this._mapTexture.lineTo( parseInt(size.x / 2 ), parseInt( size.y / 2 ) + 16 );
+			
+			this._mapTexture.save();
+			this._mapTexture.globalAlpha = 1;
+			
+			this._mapTexture.lineWidth = 3;
+			this._mapTexture.strokeStyle = "#222";
+		
+		
+			this._mapTexture.stroke();
+			
+			this._mapTexture.restore();
+		}
+	},
+	
+	_finish : function() 
+	{
+		var size = this._map.getSize();
+		
+		var text =  "地理院地図";
+		this._mapTexture.font= "normal 25px 'メイリオ','ヒラギノ角ゴ Pro W3'";
+		
+		this._mapTexture.strokeStyle = '#000';
+		this._mapTexture.lineWidth = 4; 
+		this._mapTexture.lineJoin = 'round';
+		this._mapTexture.fillStyle = '#fff';
+		this._mapTexture.textAlign = 'right';
+		this._mapTexture.textBaseline = 'bottom';
+		
+		this._mapTexture.globalAlpha = 0.8;
+		this._mapTexture.strokeText(text,size.x-6,size.y-6);
+		this._mapTexture.globalAlpha = 1;
+		this._mapTexture.fillText(text,size.x-6,size.y-6);
+		
+		this.fire("finish", { canvas : this._mapCanvas } );
+	}
+	
+	
+} );
+
+
+
+
+GSI.MapToImage.TileLayer = L.Class.extend( {
+	includes: L.Mixin.Events,
+	
+	initialize : function ( map, layer, options )
+	{
+		L.setOptions(this, options);
+		this._map = map;
+		this._layer = layer;
+		
+	},
+	
+	_getTileSize : function()
+	{
+		var zoom = this._map.getZoom();
+		var zoomN = this._layer.options.maxNativeZoom;
+		var tileSize = this._layer.options.tileSize;
+
+		if (zoomN && zoom > zoomN) {
+			tileSize = Math.round(this._map.getZoomScale(zoom) / this._map.getZoomScale(zoomN) * tileSize);
+		}
+		
+		return tileSize;
+	},
+	
+	refreshQueue : function()
+	{
+		var bounds = this._map.getPixelBounds();
+		var zoom = this._map.getZoom();
+		if (zoom > this._layer.options.maxZoom || zoom < this._layer.options.minZoom) {
+			return;
+		}
+		
+		
+		var tileSize = this._getTileSize();
+		
+		
+		
+		var tileBounds = L.bounds(
+				bounds.min.divideBy(tileSize)._floor(),
+				bounds.max.divideBy(tileSize)._floor());
+		this._queue = [],
+			center = tileBounds.getCenter();
+		
+		this._tiles = {};
+		var j, i, point;
+
+		for (j = tileBounds.min.y; j <= tileBounds.max.y; j++) {
+			for (i = tileBounds.min.x; i <= tileBounds.max.x; i++) {
+				point = new L.Point(i, j);
+				this._queue.push(point);
+				this._tiles[ point.x + ":" + point.y ] = point;
+			}
+		}
+		
+	},
+	
+	_getZoomForUrl: function () {
+
+		var options = this._layer.options,
+		    zoom = this._map.getZoom();
+
+		if (options.zoomReverse) {
+			zoom = options.maxZoom - zoom;
+		}
+
+		zoom += options.zoomOffset;
+
+		return options.maxNativeZoom ? Math.min(zoom, options.maxNativeZoom) : zoom;
+	},
+	
+	
+	_getWrapTileNum: function () {
+		var crs = this._map.options.crs,
+		    size = crs.getSize(this._map.getZoom());
+		return size.divideBy(this._getTileSize())._floor();
+	},
+	
+	_adjustTilePoint: function (tilePoint) {
+
+		var limit = this._getWrapTileNum();
+		
+		// wrap tile coordinates
+		if (!this.options.continuousWorld && !this.options.noWrap) {
+			tilePoint.x = ((tilePoint.x % limit.x) + limit.x) % limit.x;
+		}
+
+		tilePoint.z = this._getZoomForUrl();
+	},
+	
+	load : function()
+	{
+		if ( !this._queue ) return;
+		var zoom = this._getZoomForUrl();
+		var tileSize = this._getTileSize();
+		var origin = this._map.getPixelOrigin();
+		var pixelBounds = this._map.getPixelBounds();
+		var loadCounter = 0;
+		
+		for( var i = 0; i<this._queue.length; i++ )
+		{
+			var tilePoint =  this._queue[i];
+			
+			var tilePoint2 = $.extend( {}, tilePoint );
+			
+			this._adjustTilePoint(tilePoint2);
+			
+			if (this._layer.options.bounds) {
+				var 
+					nwPoint = tilePoint.multiplyBy(tileSize),
+					sePoint = nwPoint.add([tileSize, tileSize]),
+					nw = this._map.unproject(nwPoint),
+					se = this._map.unproject(sePoint);
+
+				if (!this._layer.options.continuousWorld && !this._layer.options.noWrap) {
+					nw = nw.wrap();
+					se = se.wrap();
+				}
+
+				if (!this._layer.options.bounds.intersects([nw, se])) 
+				{
+					tilePoint._noimage = true;
+					delete this._tiles[ tilePoint.x + ":" + tilePoint.y ];
+					continue;
+				}
+			}
+			
+			var tilePos = this._getTilePos(tilePoint2, tileSize);
+			tilePos = tilePoint.multiplyBy(tileSize).subtract(origin);
+			tilePos.x += (origin.x - pixelBounds.min.x );
+			tilePos.y += (origin.y - pixelBounds.min.y );
+			
+			
+			
+			tilePoint.img = $( "<img>" ).css({
+				width : tileSize + "px",
+				height : tileSize + "px"
+			}).attr( { "crossOrigin" : "anonymous" } );
+			//tilePoint.z = zoom;
+			tilePoint.size = tileSize;
+			tilePoint.pos = tilePos;
+			tilePoint.img.on("load", L.bind( this._onTileLoad, this, tilePoint ) );
+			tilePoint.img.on( "error", L.bind( this._onTileLoadError, this, tilePoint ) );
+			
+			tilePoint.img.attr( { "src" : this.getTileUrl(tilePoint2) } );
+			
+			//this._loadTile(tile, tilePoint);
+			loadCounter++;
+		}
+		
+		if ( loadCounter <= 0 )
+		{
+			this._tileLoaded();
+		}
+	},
+	
+	_tileLoaded : function()
+	{
+		var length = 0;
+		for(var key in this._tiles) length++;
+		
+		if ( length <= 0 )
+		{
+			this.fire( "loaded" );
+		}
+	},
+	
+	_onTileLoad :function(tilePoint)
+	{
+		delete this._tiles[ tilePoint.x + ":" + tilePoint.y ];
+		this._tileLoaded();
+	},
+	_onTileLoadError :function(tilePoint)
+	{
+		tilePoint._noimage = true;
+		delete this._tiles[ tilePoint.x + ":" + tilePoint.y ];
+		this._tileLoaded();
+	},
+	
+	_getSubdomain: function (tilePoint) {
+		var index = Math.abs(tilePoint.x + tilePoint.y) % this._layer.options.subdomains.length;
+		return this._layer.options.subdomains[index];
+	},
+	getTileUrl: function (tilePoint) {
+		return L.Util.template(this._layer._url.replace(/cyberjapandata.gsi.go.jp/, "maps.gsi.go.jp"), L.extend({
+			s: this._getSubdomain(tilePoint),
+			z: tilePoint.z,
+			x: tilePoint.x,
+			y: tilePoint.y
+		}, this.options));
+	},
+	
+	_getTilePos : function(tilePoint, tileSize)
+	{
+		var origin = this._map.getPixelOrigin();
+
+		return tilePoint.multiplyBy(tileSize).subtract(origin);
+	},
+	
+	
+	draw : function( texture )
+	{
+		var grayScaleCanvas = null;
+		texture.globalAlpha = ( this.options.opacity ? this.options.opacity : 1.0 );
+		for ( var i=0; i<this._queue.length; i++ )
+		{
+			var tilePoint = this._queue[i];
+			if ( tilePoint._noimage ) continue;
+			
+			if ( this.options.grayscale )
+			{
+				
+				if ( !grayScaleCanvas )
+					grayScaleCanvas = document.createElement("canvas");
+				if(grayScaleCanvas.getContext)
+				{
+					grayScaleCanvas.width  = Math.ceil(tilePoint.size);
+					grayScaleCanvas.height = Math.ceil(tilePoint.size);
+
+					var ctx = grayScaleCanvas.getContext("2d");
+					ctx.drawImage(tilePoint.img[0], 0, 0, 256 ,256, 0, 0, tilePoint.size, tilePoint.size);
+					var imageData = ctx.getImageData(0, 0, tilePoint.size, tilePoint.size);
+					pixelData = imageData.data;
+					for(var y = 0; y < grayScaleCanvas.height; y++){
+						for(var x = 0; x < grayScaleCanvas.width; x++){
+							// (x,y)ピクセルの明度
+							var j = (y * 4 * grayScaleCanvas.width) + (x * 4);
+
+							var R = pixelData[j    ];
+							var G = pixelData[j + 1];
+							var B = pixelData[j + 2];
+
+							//グレースケールに変換
+							var grayScale = (R * 0.3) + (G * 0.59) + (B * .11);
+							pixelData[j    ] = grayScale;
+							pixelData[j + 1] = grayScale;
+							pixelData[j + 2] = grayScale;
+							//pixelData[j + 3] = 32;
+						}
+					}
+					ctx.putImageData(imageData, 0, 0, 0, 0, imageData.width, imageData.height);
+					
+					
+				texture.drawImage(grayScaleCanvas, 0, 0, 256 ,256, 
+					tilePoint.pos.x, tilePoint.pos.y, 
+					tilePoint.size, tilePoint.size);
+					
+				}
+			}
+			else
+			{
+				if ( this.options.blend )
+				{
+					texture.globalCompositeOperation = "multiply";
+					texture.drawImage(tilePoint.img[0], 0, 0, 256 ,256, 
+						tilePoint.pos.x, tilePoint.pos.y, 
+						tilePoint.size, tilePoint.size);
+					texture.globalCompositeOperation = "source-over";
+				}
+				else
+				{
+					texture.drawImage(tilePoint.img[0], 0, 0, 256 ,256, 
+						tilePoint.pos.x, tilePoint.pos.y, 
+						tilePoint.size, tilePoint.size);
+				
+				}
+			}
+		}
+		texture.globalAlpha = 1.0;
+	}
+	
+} );
+
+
+
+
+GSI.MapToImage.VectorTileLayer = L.Class.extend( {
+	includes: L.Mixin.Events,
+	
+	initialize : function ( map, layer, options )
+	{
+		L.setOptions(this, options);
+		this._map = map;
+		this._layer = layer;
+		
+	},
+	
+	load : function()
+	{
+		this.fire( "loaded" );
+	},
+	
+	draw : function( texture )
+	{
+		if ( this._layer instanceof GSI.VectorTileLayer )
+		{
+			var canvasList = $(this._layer._container ).find( "canvas" );
+			for( var key in this._layer._tiles )
+			{
+				var geoJSON = this._layer._tiles[key].geoJSON;
+				if ( !geoJSON ) continue;
+				for( var i=0; i<geoJSON.length; i++ )
+					this._drawLayer( texture,geoJSON[i], this._layer._tiles[key]._tilePoint, this._layer.options );
+			}
+		}
+		
+		this._drawLayer( texture,this._layer.geojsonLayer ? this._layer.geojsonLayer  : ( this._layer.layer ? this._layer.layer: this._layer) );
+	},
+	_drawLayer : function(texture,layer, tilePoint, layerOptions)
+	{
+		if ( !layer ) return;
+		if ( layer.getLayers ) 
+		{
+			var layers = layer.getLayers();
+			
+			
+			for( var i=0; i<layers.length; i++ )
+			{
+				this._drawLayer( texture,layers[i], tilePoint, layerOptions );
+			}
+			return;
+		}
+		this._drawPath( texture, layer, tilePoint, layerOptions );
+	},
+	
+	_updateStyle: function (texture, layer) {
+		if ( !layer._parts && ( !layer._radius || !layer._point ) ) return;
+		var options = layer.options;
+		if (options.stroke) {
+			texture.lineWidth = options.weight;
+			texture.strokeStyle = options.color;
+			
+			if ( options.lineCap &&
+				( options.lineCap == "butt" ||
+				options.lineCap == "round" ||
+				options.lineCap == "square" )
+			)
+			{
+				texture.lineCap = options.lineCap ;
+			}
+			else
+				texture.lineCap = "butt";
+			texture.lineJoin = 'round';
+		}
+		if (options.fill) {
+			texture.fillStyle = options.fillColor || options.color;
+		}
+	},
+	
+	_drawPath: function (texture, layer, tilePoint, layerOptions) {
+		
+		if ( layer.options.visible == false ) return;
+		
+		var origin = this._map.getPixelOrigin();
+		var pixelBounds = this._map.getPixelBounds();
+		var options = layer.options;
+		var dashArray = null;
+		
+		
+		
+		var offset = {
+			x : 0,
+			y : 0
+		};
+		var scale = 1;
+		if ( tilePoint )
+		{
+			var zoom = this._map.getZoom();
+			var dz = zoom - layerOptions.maxNativeZoom;
+			var tileSize = layerOptions.tileSize;
+			var tz = zoom;
+			if(dz>0){tileSize = tileSize*Math.pow(2, dz);tz = tz -dz;}
+			//if(dz>=layerOptions.maxDz)
+			//	scale = tileSize / (layerOptions.tileSize*Math.pow(2, layerOptions.maxDz) );
+			
+			offset.x = tilePoint.x*tileSize- pixelBounds.min.x -layerOptions.canvasDx*scale;
+			offset.y = tilePoint.y*tileSize- pixelBounds.min.y  - layerOptions.canvasDy*scale;
+		}
+		else
+		{
+			offset.x = ( origin.x - pixelBounds.min.x );
+			offset.y = ( origin.y - pixelBounds.min.y );
+		}
+		
+		
+		if ( options.dashArray )
+		{
+			if ( options.dashArray instanceof Array )
+				dashArray = $.extend( [], options.dashArray);
+			else
+			{
+				var dashParts = options.dashArray.split( ',' );
+				dashArray = [];
+				for( var i=0; i<dashParts.length; i++ )
+				{
+					dashArray.push(parseInt( dashParts[i] ));
+				}
+			}
+			if ( dashArray.length < 2 ) dashArray = null;
+		}
+		
+		if ( !layer._parts ) 
+		{
+			if ( layer._radius && layer._point )
+			{
+				var p = layer._point;
+				texture.beginPath();
+				texture.arc(
+					( scale * p.x ) + offset.x, 
+					( scale * p.y ) + offset.y, 
+					layer._radius, 0, Math.PI * 2, false);
+			}
+		}
+		else
+		{
+			
+			var i, j, len, len2, point, drawMethod;
+			var vp = this._map._pathViewport;
+			
+			var isPolygon = (layer instanceof L.Polygon || layer instanceof L.Circle);
+			
+			texture.beginPath();
+			var parts = layer._parts;
+			for (i = 0, len = parts.length; i < len; i++) {
+				
+			
+				var fromPoint = null;
+				var firstPoint = null;
+				var lastPoint = null;
+				
+				if ( parts[i].length > 2 &&
+					(parts[i][0].x != parts[i][parts[i].length-1].x || parts[i][0].y != parts[i][parts[i].length-1].y ) )
+				{
+					lastPoint =parts[i][0];
+				}
+				for (j = 0, len2 = parts[i].length; j < len2; j++) {
+					
+					point = parts[i][j];
+				
+					var toPoint = {
+						x : ( scale * point.x ) + offset.x,
+						y : ( scale * point.y ) + offset.y
+					};
+					
+					if ( j == 0 )
+					{
+						firstPoint = toPoint;
+						texture.moveTo(toPoint.x, toPoint.y);
+					}
+					else
+					{
+						if (dashArray && !isPolygon)
+							GSI.Utils.dotLineTo( texture, fromPoint.x, fromPoint.y,
+								toPoint.x, toPoint.y, dashArray);
+						else
+						{
+							if ( texture.setLineDash !== undefined )
+								texture.setLineDash([]);
+							else if ( texture.mozDash !== undefined )
+								texture.mozDash = [];
+							texture.lineTo(toPoint.x, toPoint.y);
+						}
+					}
+					
+					fromPoint = toPoint;
+				}
+				
+				if ( lastPoint && isPolygon )
+				{
+					
+					var toPoint = {
+						x : ( scale * lastPoint.x ) + offset.x,
+						y : ( scale * lastPoint.y ) + offset.y
+					};
+					if ( texture.setLineDash !== undefined )
+						texture.setLineDash([]);
+					else if ( texture.mozDash !== undefined )
+						texture.mozDash = [];
+					texture.lineTo(toPoint.x, toPoint.y);
+				}
+				
+			}
+			
+			if (isPolygon) {
+				texture.closePath();
+			}
+		}
+		
+		
+		texture.save();
+		
+		
+		this._updateStyle(texture, layer);
+		var opacity = ( this.options.opacity ?  this.options.opacity: 1 );
+		
+		if (layer.options.fill) 
+		{
+			texture.globalAlpha = ( layer.options.fillOpacity || layer.options.fillOpacity == 0 ?layer.options.fillOpacity : 0 ) * opacity;
+			texture.fill();
+		}
+		if (layer.options.stroke) {
+			texture.globalAlpha = ( layer.options.opacity || layer.options.opacity == 0 ?  layer.options.opacity: 1 );
+			texture.stroke();
+		}
+		texture.restore();
+		
+	}
+
+
+	
+} );
+
+
+
+
+GSI.MapToImageWindow = L.Class.extend( {
+	includes: L.Mixin.Events,
+	
+	initialize : function ( map, canvas )
+	{
+		L.setOptions(this, options);
+		this._map = map;
+	},
+	
+	show : function(f)
+	{
+		if ( !this._blind )
+		{
+			this._blind = $( "<div>" ).addClass( "window_blind" );
+			this._msg = $( "<div>" ).css( {
+				"position" : "absolute",
+				"left" : "50%",
+				"top" : "50%",
+				"margin-left" : "-90px",
+				"padding-left" : "34px",
+				"display" : "none",
+				"color" : "#fff",
+				"z-index" : 999999,
+				"line-height": "32px",
+				"background-image": "url(image/system/loading002.gif)",
+				"background-position":"0px 50%",
+				"background-repeat":"no-repeat"
+			}).html( "画像を生成しています" );
+			$("body").append( this._blind ).append( this._msg );
+		}
+		
+		
+		
+		
+		this._blind.fadeIn( 300 );
+		this._msg .fadeIn( 300,f );
+	
+	},
+	
+	_makeWorldFileText : function()
+	{
+		
+		var size = this._map.getSize();
+		var bounds = this._map.getBounds();
+				
+		var northWest = L.Projection.SphericalMercator.project(
+				bounds.getNorthWest()
+			);
+		var southEast = L.Projection.SphericalMercator.project(
+				bounds.getSouthEast()
+			);
+			
+			
+		var lt = {
+			lng : northWest.x * 6378137.0,
+			lat :northWest.y * 6378137.0
+		};
+		var rb = {
+			lng : southEast.x * 6378137.0,
+			lat : southEast.y * 6378137.0
+		};
+		var txt = "";
+				txt += ( ( rb.lng - lt.lng ) / size.x ) + "\n";
+				txt += "0\n";
+				txt += "0\n";
+				txt += -( ( rb.lng - lt.lng ) / size.x ) + "\n";
+				txt += lt.lng + "\n";
+				txt += lt.lat;
+		return txt;
+	},
+	
+	setCanvas : function( canvas )
+	{
+		this._canvas = canvas;		
+		this._worldFileText = this._makeWorldFileText();
+		
+		this._msg .hide();
+		this._fileName = 'img' + GSI.Utils.getTimeStampString();
+		
+		if ( !this._frame )
+		{
+			this._frame = $( "<div>" ).addClass("gsi_maptoimage_window");
+			
+			this._text = $( "<div>"  ).addClass("gsi_maptoimage_window_text").html( GSI.TEXT.MAPTOIMAGE.WINDOW_MSG );
+			this._frame.append( this._text );
+			
+			this._closeBtn = $( "<a>" ).addClass("close_btn").attr({"href":"javascript:void(0);"}).html("×").click( L.bind( function() { this.hide();}, this ) );
+			this._frame.append( this._closeBtn );
+			var buttonFrame = $( "<div>" ).addClass("gsi_maptoimage_window_button_frame");
+			this._dlImageButton = $( "<a>" ).attr({"href":"javascript:void(0);"}).html(GSI.TEXT.MAPTOIMAGE.WINDOW_SAVEIMGBTN).click(L.bind( function(){
+				if(window.navigator.msSaveBlob)
+				{
+					window.navigator.msSaveOrOpenBlob( this._makeImage(this._canvas.toDataURL()), this._fileName + ".png" );
+				}
+				else
+				{
+					var url = window.URL || window.webkitURL;
+					this._dlImageButton.attr( {
+						"download" : this._fileName + ".png",
+						"href" : url.createObjectURL(this._makeImage(this._canvas.toDataURL()))
+					} );
+					
+				}
+			
+			}, this ) );
+			this._dlWorldButton = $( "<a>" ).attr({"href":"javascript:void(0);"}).html(GSI.TEXT.MAPTOIMAGE.WINDOW_SAVEPGWBTN).click(L.bind( function(){
+				/*
+				var size = this._map.getSize();
+				var bounds = this._map.getBounds();
+						
+				var northWest = L.Projection.SphericalMercator.project(
+						bounds.getNorthWest()
+					);
+				var southEast = L.Projection.SphericalMercator.project(
+						bounds.getSouthEast()
+					);
+					
+					
+				var lt = {
+					lng : northWest.x * 6378137.0,
+					lat :northWest.y * 6378137.0
+				};
+				var rb = {
+					lng : southEast.x * 6378137.0,
+					lat : southEast.y * 6378137.0
+				};
+
+				//var lt = bounds.getNorthWest();
+				//var rb = bounds.getSouthEast();
+				
+				var txt = "";
+				txt += ( ( rb.lng - lt.lng ) / size.x ) + "\n";
+				txt += "0\n";
+				txt += "0\n";
+				txt += -( ( rb.lng - lt.lng ) / size.x ) + "\n";
+				txt += lt.lng + "\n";
+				txt += lt.lat;
+				*/
+				var blob = new Blob([this._worldFileText], { "type" : "text/plain"})
+					
+				if(window.navigator.msSaveBlob)
+				{
+					window.navigator.msSaveOrOpenBlob( blob, this._fileName + ".pgw" );
+				}
+				else
+				{
+					
+					var url = window.URL || window.webkitURL;
+					this._dlWorldButton.attr( {
+						"download" : this._fileName + ".pgw",
+						"href" : url.createObjectURL(blob)
+					} );
+					
+				}
+			}, this ) );
+			buttonFrame.append( this._dlImageButton ).append( this._dlWorldButton );
+			
+			var messageFrame = $( "<div>" ).addClass("gsi_maptoimage_window_text2").html( GSI.TEXT.MAPTOIMAGE.WINDOW_MSG2 );
+			
+			
+			this._frame.append( buttonFrame );
+			this._frame.append( messageFrame );
+			
+			$("body").append( this._frame );
+		}
+		
+		this._blind.fadeIn( 200 );
+		this._frame.fadeIn( 200 );
+		
+	},
+	 
+	_makeImage : function(v){
+		var o      = null;
+		var base64 = v.split(',');
+		if(base64.length > 1){
+			var data   = window.atob(base64[1]);
+			var data_n = data.length;
+			if(data_n > 0){
+			var data_buff = new ArrayBuffer(data_n);
+			var data_blob = new Uint8Array(data_buff);
+
+			var i = 0;
+
+			for(i = 0; i < data_n; i++){
+			    data_blob[i] = data.charCodeAt(i);
+			}
+				o = new Blob([data_blob], {type: 'image/png'});
+			}
+		}
+		return o;
+	},
+	
+	hide : function()
+	{
+		if ( this._frame ) this._frame.fadeOut( 200 );
+		if ( this._blind ) this._blind.fadeOut( 200 );
+	},
+	
+} );
+
+
+
+
+/*************************************************
+ L.TileLayer boundsのバグ修正
+*************************************************/
+L.TileLayer.prototype._tileShouldBeLoaded = function (tilePoint) {
+	if ((tilePoint.x + ':' + tilePoint.y) in this._tiles) {
+		return false; // already loaded
+	}
+
+	var options = this.options;
+
+	if (!options.continuousWorld) {
+		var limit = this._getWrapTileNum();
+
+		// don't load if exceeds world bounds
+		if ((options.noWrap && (tilePoint.x < 0 || tilePoint.x >= limit.x)) ||
+			tilePoint.y < 0 || tilePoint.y >= limit.y) { return false; }
+	}
+
+	if (options.bounds) {
+		var tileSize = this._getTileSize(), //options.tileSize,
+		    nwPoint = tilePoint.multiplyBy(tileSize),
+		    sePoint = nwPoint.add([tileSize, tileSize]),
+		    nw = this._map.unproject(nwPoint),
+		    se = this._map.unproject(sePoint);
+
+		// TODO temporary hack, will be removed after refactoring projections
+		// https://github.com/Leaflet/Leaflet/issues/1618
+		if (!options.continuousWorld && !options.noWrap) {
+			nw = nw.wrap();
+			se = se.wrap();
+		}
+
+		if (!options.bounds.intersects([nw, se])) { return false; }
+	}
+
+	return true;
+};
+
+
+
+
+
+
+/*************************************************
+ 距離の計算
+*************************************************/
+GSI.Utils.DistanceCalculator = {};
+GSI.Utils.DistanceCalculator.calc = function (from, to)
+{
+	try
+	{
+		var PI = 3.14159265358979;
+		var params = {};
+		
+		// ラジアンへ
+		params.phi1  = from.lat * PI / 180;
+		params.lamb1 = from.lng * PI / 180; if (params.lamb1 < 0) params.lamb1 += PI * 2;
+		params.phi2  = to.lat * PI / 180;
+		params.lamb2 = to.lng * PI / 180; if (params.lamb2 < 0) params.lamb2 += PI * 2;
+		
+		// 計算
+		params.lamb = params.lamb2 - params.lamb1;
+		if (params.lamb > PI) params.lamb -= PI * 2;
+		else if (params.lamb < -PI) params.lamb += PI * 2;
+
+		if (params.lamb >= 0) params.seihan = 0;
+		else if (params.lamb < 0)
+		{
+			params.seihan = 1;
+			params.lamb = Math.abs(params.lamb);
+		}
+		
+		// 楕円体原子 GRS80
+		var daen = 2;
+		var a = 6378137;
+		var rf = 298.257222101;
+		params.f = 1. / rf;
+		
+		params.a = a;
+		params.lambd = PI - params.lamb;
+		if (params.seihan == 0)
+		{
+			params.delta = params.phi2 - params.phi1;
+			params.sigma = params.phi1 + params.phi2;
+			params.u1 = Math.atan((1 - params.f) * Math.tan(params.phi1));
+			params.u2 = Math.atan((1 - params.f) * Math.tan(params.phi2));
+		}
+		else if (params.seihan == 1)
+		{
+			params.delta = params.phi1 - params.phi2;
+			params.sigma = params.phi1 + params.phi2;
+			params.u1 = Math.atan((1 - params.f) * Math.tan(params.phi2));
+			params.u2 = Math.atan((1 - params.f) * Math.tan(params.phi1));
+		}
+
+		params.sigmad = params.u1 + params.u2;
+		params.deltad = params.u2 - params.u1;
+		params.xi = Math.cos(params.sigmad / 2.);
+		params.xid = Math.sin(params.sigmad / 2.);
+		params.eta = Math.sin(params.deltad / 2.);
+		params.etad = Math.cos(params.deltad / 2.);
+		params.x = Math.sin(params.u1) * Math.sin(params.u2);
+		params.y = Math.cos(params.u1) * Math.cos(params.u2);
+		params.c__ = params.y * Math.cos(params.lamb) + params.x;
+		params.d__1 = 1 - params.f;
+		params.ep = params.f * (2 - params.f) / (params.d__1 * params.d__1);
+		var zoneInfo = {
+			zone : 0,
+			theta : null
+		};
+		
+		var dms2r = GSI.Utils.DistanceCalculator._dms2r;
+		
+		// Zoneの判断
+		if (params.c__ >= 0)
+		{
+			zoneInfo.zone = 1;
+			zoneInfo.theta = params.lamb * (params.f * params.y + 1);
+		}
+		else if (params.c__ < 0 && params.c__ >= -Math.cos(dms2r(PI,30000) * Math.cos(params.u1))) 
+		{
+			zoneInfo.zone = 2;
+			zoneInfo.theta = params.lambd;
+		}
+		else if (params.c__ < -Math.cos(dms2r(PI,30000) * Math.cos(params.u1))) 
+		{
+			zoneInfo.zone = 3;
+			GSI.Utils.DistanceCalculator._zone3(PI, params, zoneInfo);
+		}
+		
+		params.theta = zoneInfo.theta;
+		
+		
+		var distance = 0;
+		if (zoneInfo.zone >= 1 && zoneInfo.zone <= 321) 
+		{
+			distance = GSI.Utils.DistanceCalculator._zone1(PI, params, zoneInfo);
+		}
+		else if (zoneInfo.zone == 322)
+		{
+			distance = GSI.Utils.DistanceCalculator._zone322(PI, params, zoneInfo);
+		}
+		else if (zoneInfo.zone == 323)
+		{
+			distance = GSI.Utils.DistanceCalculator._zone323(PI, params, zoneInfo);
+		}
+	}
+	catch(ex)
+	{
+		console.log(ex);
+	}
+	
+	return distance;
+};
+
+GSI.Utils.DistanceCalculator._dms2r = function(PI,dms)
+{
+	var dd, mm, ss, deg, hugou;
+
+	if (dms > 0) {
+		hugou = 1.;
+	} else if (dms < 0) {
+		hugou = -1;
+	}
+	dd = parseFloat(parseInt(Math.abs(dms) / 10000));
+	mm = parseFloat(parseInt((Math.abs(dms) - dd * 10000) / 100));
+	ss = Math.abs(dms) - dd * 10000 - mm * 100;
+	deg = hugou * (dd + mm / 60 + ss / 3600);
+	return deg * PI / 180.;
+};
+
+
+GSI.Utils.DistanceCalculator._zone1 = function(PI,params, zoneInfo)
+{
+	var d__1, d__2, d__3, d__4, d__5;
+	
+	var zero_ = function(a){
+		if (Math.abs(a) < 1e-14) return 1e-14;
+		else return a;
+	};
+	/* Local variables */
+	var g, h__;
+	var i__;
+	var n0, aa, bb, dd, ee, ff, gg, jj, kk, zeta;
+	//extern doublereal zero_(doublereal *);
+	var dalp2, alpha, zetad, alpha2, sgamma, rgamma;
+	//extern /* Subroutine */ int hanten_(void);
+	var ssigma;
+	//extern /* Subroutine */ int handan1_(void), handan2_(void);
+
+/*     θの計算 */
+	for (i__ = 1; i__ <= 100; ++i__)
+	{
+		if (zoneInfo.zone == 1)
+		{
+			d__1 = params.eta;
+			d__2 = Math.cos(params.theta / 2.);
+			d__3 = params.xi;
+			d__4 = Math.sin(params.theta / 2.);
+			g = Math.sqrt(d__1 * d__1 * (d__2 * d__2) + d__3 * d__3 * (d__4 * d__4));
+			d__1 = params.etad;
+			d__2 = Math.cos(params.theta / 2.);
+			d__3 = params.xid;
+			d__4 = Math.sin(params.theta / 2.);
+			h__ = Math.sqrt(d__1 * d__1 * (d__2 * d__2) + d__3 * d__3 * (d__4 * d__4));
+		}
+		else
+		{
+			d__1 = params.eta;
+			d__2 = Math.sin(params.theta / 2.);
+			d__3 = params.xi;
+			d__4 = Math.cos(params.theta / 2.);
+			g = Math.sqrt(d__1 * d__1 * (d__2 * d__2) + d__3 * d__3 * (d__4 * d__4));
+			d__1 = params.etad;
+			d__2 = Math.sin(params.theta / 2.);
+			d__3 = params.xid;
+			d__4 = Math.cos(params.theta / 2.);
+			h__ = Math.sqrt(d__1 * d__1 * (d__2 * d__2) + d__3 * d__3 * (d__4 * d__4));
+		}
+		ssigma = Math.atan(g / zero_(h__)) * 2;
+		jj = g * 2 * h__;
+		d__1 = h__;
+		d__2 = g;
+		kk = d__1 * d__1 - d__2 * d__2;
+		sgamma = params.y * Math.sin(params.theta) / zero_(jj);
+		d__1 = sgamma;
+		rgamma = 1 - d__1 * d__1;
+		zeta = rgamma * kk - params.x * 2;
+		zetad = zeta + params.x;
+		d__1 = params.f;
+		dd = params.f * 0.25 * (params.f + 1) - d__1 * d__1 * 0.1875 * rgamma;
+		d__1 = zeta;
+		d__2 = rgamma;
+		ee = (1 - dd * rgamma) * params.f * sgamma * (ssigma + dd * jj * (
+			zeta + dd * kk * (d__1 * d__1 * 2 - d__2 * d__2)));
+		if (zoneInfo.zone == 1)
+		{
+		    ff = params.theta - params.lamb - ee;
+		}
+		else
+		{
+		    ff = params.theta - params.lambd + ee;
+		}
+		if (Math.abs(ff) < 1e-14)
+		{
+		    break;
+		}
+		d__1 = sgamma;
+		d__2 = sgamma;
+		d__3 = params.f;
+		gg = params.f * (d__1 * d__1) * (1 - dd * 2 * rgamma) + params.f * 
+			zetad * (ssigma / zero_(jj)) * (1 - dd * rgamma + params.f *
+			 0.5 * (d__2 * d__2)) + d__3 * d__3 * 0.25 * zeta * zetad;
+		d__1 = 1 - gg;
+		params.theta -= ff / zero_(d__1);
+	}
+		
+/*     方位角の計算(zone=[1],[2,31,321]) */
+
+	if (zoneInfo.zone == 1) 
+	{
+		alpha = Math.atan(params.xi * Math.tan(params.theta / 2.) / zero_(params.eta));
+		dalp2 = Math.atan(params.xid * Math.tan(params.theta / 2.) / zero_(params.etad));
+	}
+	else
+	{
+		alpha = Math.atan(params.etad * Math.tan(params.theta / 2.) / zero_(params.xid));
+		dalp2 = Math.atan(params.eta * Math.tan(params.theta / 2.) / zero_(params.xi));
+	}
+	if (alpha <= -1e-14 && params.lamb > 0.)
+	{
+		alpha += PI;
+	}
+	else if (alpha >= 1e-14 && params.lamb < 0.)
+	{
+		alpha += PI;
+	}
+	else if (alpha <= -1e-14 && params.lamb < 0.)
+	{
+		alpha += PI * 2;
+	}
+
+	var result = {};
+	
+    result.alpha1 = alpha - dalp2;
+	if (zoneInfo.zone == 1)
+	{
+		alpha2 = alpha + dalp2;
+	} else {
+		alpha2 = PI - alpha - dalp2;
+	}
+	result.alp21 = PI + alpha2;
+	if (result.alp21 < 0)
+	{
+		result.alp21 += PI * 2;
+	} else if (result.alp21 >= PI * 2)
+	{
+		result.alp21 -= PI * 2;
+	}
+
+	if (Math.abs(params.lamb) < 1e-14)
+	{
+		GSI.Utils.DistanceCalculator._handan1(PI,params,zoneInfo,result);
+	}
+	if ((d__1 = Math.abs(params.lamb) - PI, Math.abs(d__1)) < 1e-14)
+	{
+		GSI.Utils.DistanceCalculator._handan2(PI,params,zoneInfo,result);
+	}
+
+	GSI.Utils.DistanceCalculator._hanten(PI,params,zoneInfo,result);
+	
+	
+/*     測地線長の計算(zone=[1],[2,31,321]) */
+    d__1 = Math.sqrt(params.ep * rgamma + 1) + 1;
+    n0 = params.ep * rgamma / (d__1 * d__1);
+    d__1 = n0;
+    aa = (n0 + 1) * (d__1 * d__1 * 1.25 + 1);
+    d__1 = n0;
+    d__2 = Math.sqrt(params.ep * rgamma + 1) + 1;
+    bb = params.ep * (1 - d__1 * d__1 * .375) / (d__2 * d__2);
+    d__1 = rgamma;
+    d__2 = zeta;
+    d__3 = kk;
+    d__4 = rgamma;
+    d__5 = zeta;
+    result.s = (1 - params.f) * params.a * aa * (ssigma - bb * jj * (zeta - 
+	    bb * .25 * (kk * (d__1 * d__1 - d__2 * d__2 * 2) - bb * 
+	    0.16666666666666666 * zeta * (1 - d__3 * d__3 * 4) * (d__4 * d__4 *
+	     3 - d__5 * d__5 * 4))));
+    return result.s;
+};
+
+
+
+GSI.Utils.DistanceCalculator._zone3 = function(PI, params, zoneInfo)
+{
+	var d__1, d__2, d__3, d__4;
+
+	d__1 = Math.cos(params.u1);
+	d__2 = Math.sin(params.u1);
+	d__3 = params.f;
+	d__4 = Math.sin(params.u1), d__4 *= d__4;
+	zoneInfo.rr = params.f * PI * (d__1 * d__1) * (1 - params.f * 0.25 
+		* (params.f + 1) * (d__2 * d__2) + d__3 * d__3 * 0.1875 * (d__4 * 
+		d__4));
+	zoneInfo.d1 = params.lambd * Math.cos(params.u1) - zoneInfo.rr;
+	zoneInfo.d2 = Math.abs(params.sigmad) + zoneInfo.rr;
+	zoneInfo.q = params.lambd / (params.f * PI);
+	zoneInfo.f1 = params.f * .25 * (params.f * .5 + 1);
+	
+	d__1 = zoneInfo.q;
+	zoneInfo.gamma0 = zoneInfo.q + zoneInfo.f1 * zoneInfo.q - zoneInfo.f1 * (d__1 * (d__1 * d__1));
+	if (Math.abs(params.sigma) >= 1e-14)
+	{
+		zoneInfo.zone = 31;
+		GSI.Utils.DistanceCalculator._zone31(PI, params, zoneInfo);
+	}
+	else if (Math.abs(params.sigma) < 1e-14)
+	{
+		zoneInfo.zone = 32;
+		GSI.Utils.DistanceCalculator._zone32(PI, params, zoneInfo);
+	}
+	return 0;
+}
+
+
+GSI.Utils.DistanceCalculator._zone31 = function(PI, params, zoneInfo)
+{
+	var d__1, d__2, d__3;
+
+	var j, k, j1, aa0, bb0, psi, psid;
+	var psidd;
+	
+	
+	var zero_ = function(a){
+		if (Math.abs(a) < 1e-14) return 1e-14;
+		else return a;
+	};
+	
+	aa0 = Math.atan(zoneInfo.d1 / zero_(zoneInfo.d2));
+	d__2 = zoneInfo.d1;
+	d__3 = zoneInfo.d2;
+	d__1 = Math.sqrt(d__2 * d__2 + d__3 * d__3);
+	bb0 = Math.asin(zoneInfo.rr / zero_(d__1));
+	psi = aa0 + bb0;
+	d__1 = Math.cos(params.u1);
+	j = zoneInfo.gamma0 / zero_(d__1);
+	k = (zoneInfo.f1 + 1) * Math.abs(params.sigmad) * (1 - params.f * params.y) / (params.f * PI * zero_(params.y));
+	d__1 = cos(psi);
+	j1 = j / (k / zero_(d__1) + 1);
+	psid = Math.asin(j1);
+	d__1 = Math.cos(params.u2);
+	psidd = Math.asin(Math.cos(params.u1) / zero_(d__1) * j1);
+	d__1 = Math.cos(params.deltad / 2.0);
+	params.theta = Math.atan(Math.tan((psid + psidd) / 2.0) * Math.sin(Math.abs(params.sigmad) / 2.0) / zero_(d__1)) * 2;
+	return 0;
+};
+
+
+GSI.Utils.DistanceCalculator._zone32 = function(PI, params, zoneInfo)
+{
+	if (zoneInfo.d1 >= 1e-14) {
+		zoneInfo.zone = 321;
+		GSI.Utils.DistanceCalculator._zone321(PI, params, zoneInfo);
+	} else if (abs(zoneInfo.d1) < 1e-14) {
+		zoneInfo.zone = 322;
+	} else if (zoneInfo.d1 <= -1e-14) {
+		zoneInfo.zone = 323;
+	}
+	return 0;
+};
+
+
+GSI.Utils.DistanceCalculator._zone321 = function(PI, params, zoneInfo)
+{
+	params.theta = params.lambd;
+	return 0;
+};
+
+
+/*************************************************
+ Zone3(b2)における方位角，距離の計算
+*************************************************/
+GSI.Utils.DistanceCalculator._zone322 = function(PI,params, zoneInfo)
+{
+	var d__1;
+	var n0, aa, alpha2, rgamma;
+	var result = {};
+	
+	result.alpha1 = PI / 2.;
+	alpha2 = PI / 2.;
+	result.alp21 = PI * 1.5;
+	GSI.Utils.DistanceCalculator._hanten(PI,params,zoneInfo,result);
+	d__1 = Math.sin(params.u1);
+	rgamma = d__1 * d__1;
+	d__1 = Math.sqrt(params.ep * rgamma + 1) + 1;
+	n0 = params.ep * rgamma / (d__1 * d__1);
+	d__1 = n0;
+	aa = (n0 + 1) * (d__1 * d__1 * 1.25 + 1);
+	result.s = (1 - params.f) * params.a * aa * PI;
+	return result.s;
+};
+
+
+/*************************************************
+ Zone3(b3)における方位角，距離の計算
+*************************************************/
+GSI.Utils.DistanceCalculator._zone323 = function(PI,params, zoneInfo)
+{
+    var d__1;
+    var i__;
+    var m, n, w, n0, aa, dd, alpha2, rgamma, sgamma;
+    for (i__ = 1; i__ <= 100; ++i__) {
+		d__1 = zoneInfo.gamma0;
+		rgamma = 1 - d__1 * d__1;
+		d__1 = params.f;
+		dd = params.f * .25 * (params.f + 1) - d__1 * d__1 * 0.1875 * rgamma;
+		sgamma = zoneInfo.q / (1 - dd * rgamma);
+		if ((d__1 = zoneInfo.gamma0 - sgamma, Math.abs(d__1)) < 1e-14) {
+			break;
+		}
+		zoneInfo.gamma0 = sgamma;
+	}
+	m = 1 - zoneInfo.q / cos(params.u1);
+	n = dd * rgamma / (1 - dd * rgamma);
+	w = m - n + m * n;
+	var result = {};
+	
+	if (w <= 0.) {
+		result.alpha1 = PI / 2.0;
+	} else {
+		result.alpha1 = PI / 2.0 - Math.asin(Math.sqrt(w / 2.0)) * 2;
+	}
+	alpha2 = PI - result.alpha1;
+	result.alp21 = PI + alpha2;
+	GSI.Utils.DistanceCalculator._hanten(PI,params,zoneInfo,result);
+	d__1 = Math.sqrt(params.ep * rgamma + 1) + 1;
+	n0 = params.ep * rgamma / (d__1 * d__1);
+	d__1 = n0;
+	aa = (n0 + 1) * (d__1 * d__1 * 1.25 + 1);
+	result.s = (1 - params.f) * params.a * aa * PI;
+	return result.s;
+};
+
+
+/*************************************************
+ 経度差0度の方位角の判断
+*************************************************/
+GSI.Utils.DistanceCalculator._handan1 = function(PI,params,zoneInfo,result)
+{
+	if (params.delta >= 0.) {
+		result.alpha1 = 0.;
+		result.alp21 = PI;
+	} else if (params.delta < 0.) {
+		result.alpha1 = PI;
+		result.alp21 = 0.;
+	}
+	return 0;
+};
+
+
+/*************************************************
+ 経度差180度の方位角の判断
+*************************************************/
+GSI.Utils.DistanceCalculator._handan2 = function(PI,params,zoneInfo,result)
+{
+	if (params.sigma >= 0) {
+		result.alpha1 = 0;
+		result.alp21 = 0;
+	} else if (params.sigma < 0) {
+		result.alpha1 = PI;
+		result.alp21 = PI;
+	}
+	return 0;
+};
+
+
+
+
+/*************************************************
+ 方位角の反転
+*************************************************/
+GSI.Utils.DistanceCalculator._hanten = function(PI,params,zoneInfo,result)
+{
+	if (params.seihan == 1) {
+		var alphax = result.alpha1;
+		result.alpha1 = result.alp21;
+		result.alp21 = alphax;
+	}
+	return 0;
+} /* hanten_ */
+
+
+
+
+
+
+
+$(document).ready( initialize );
